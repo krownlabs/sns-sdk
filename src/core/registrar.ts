@@ -13,7 +13,7 @@ import {
   InsufficientPaymentError,
   NetworkError 
 } from '../errors';
-import SonicRegistrarABI from '../contracts/abis/SonicRegistrar.json';
+import SonicRegistrarABI from '../contracts/abis/SonicRegistrarV2.json';
 
 export class SonicRegistrar {
   private registrarContract: ISonicRegistrar;
@@ -345,22 +345,240 @@ export class SonicRegistrar {
    */
   async estimateRenewalGas(domain: string, years: number, signer: Signer): Promise<bigint> {
     const normalizedDomain = normalizeDomainName(domain);
-    
+
     try {
       const priceResult = await this.getRenewalPrice(normalizedDomain, years);
       const contractWithSigner = this.registrarContract.connect(signer) as ISonicRegistrar;
-      
+
       // Use getFunction to get the specific function for gas estimation
       const renewFunction = contractWithSigner.getFunction('renew');
       const gasEstimate = await renewFunction.estimateGas(
-        normalizedDomain, 
-        years, 
+        normalizedDomain,
+        years,
         { value: priceResult.price }
       );
-      
+
       return BigInt(gasEstimate.toString());
     } catch (error: any) {
       throw new NetworkError(`Failed to estimate gas for renewing ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Register multiple domains at once
+   */
+  async registerBulk(
+    domains: Array<{ name: string; years: number }>,
+    signer: Signer
+  ): Promise<string> {
+    // Validate inputs
+    if (!domains || domains.length === 0) {
+      throw new ValidationError('Domains array cannot be empty');
+    }
+
+    if (domains.length > 20) {
+      throw new ValidationError('Cannot register more than 20 domains at once');
+    }
+
+    const names: string[] = [];
+    const yearCounts: number[] = [];
+
+    // Normalize and validate all domains
+    for (const domain of domains) {
+      const normalizedDomain = normalizeDomainName(domain.name);
+
+      const domainValidation = validateDomainName(normalizedDomain);
+      if (!domainValidation.valid) {
+        throw new ValidationError(`Invalid domain name ${domain.name}: ${domainValidation.errors.join(', ')}`);
+      }
+
+      const yearsValidation = validateYears(domain.years);
+      if (!yearsValidation.valid) {
+        throw new ValidationError(`Invalid years for ${domain.name}: ${yearsValidation.errors.join(', ')}`);
+      }
+
+      names.push(normalizedDomain);
+      yearCounts.push(domain.years);
+    }
+
+    try {
+      // Calculate total price
+      const totalPrice = await this.registrarContract.calculateBulkPrice(names, yearCounts);
+
+      const contractWithSigner = this.registrarContract.connect(signer) as ISonicRegistrar;
+
+      // Register all domains
+      const tx = await contractWithSigner.registerBulk(names, yearCounts, {
+        value: totalPrice
+      });
+
+      // Clear relevant caches
+      for (const name of names) {
+        this.clearDomainCache(name);
+      }
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error.message?.includes('Name taken')) {
+        throw new DomainUnavailableError('One or more domains', 'already registered');
+      }
+
+      if (error.message?.includes('Incorrect payment')) {
+        throw new InsufficientPaymentError('Required amount', 'Provided amount');
+      }
+
+      if (error.message?.includes('Too many domains')) {
+        throw new ValidationError('Too many domains in bulk operation');
+      }
+
+      throw new NetworkError(`Failed to register domains in bulk: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Renew multiple domains at once
+   */
+  async renewBulk(
+    renewals: Array<{ domain: string; years: number }>,
+    signer: Signer
+  ): Promise<string> {
+    // Validate inputs
+    if (!renewals || renewals.length === 0) {
+      throw new ValidationError('Renewals array cannot be empty');
+    }
+
+    if (renewals.length > 20) {
+      throw new ValidationError('Cannot renew more than 20 domains at once');
+    }
+
+    const tokenIds: string[] = [];
+    const yearCounts: number[] = [];
+    const normalizedDomains: string[] = [];
+
+    // Get token IDs and validate all domains
+    for (const renewal of renewals) {
+      const normalizedDomain = normalizeDomainName(renewal.domain);
+      normalizedDomains.push(normalizedDomain);
+
+      const domainValidation = validateDomainName(normalizedDomain);
+      if (!domainValidation.valid) {
+        throw new ValidationError(`Invalid domain name ${renewal.domain}: ${domainValidation.errors.join(', ')}`);
+      }
+
+      const yearsValidation = validateYears(renewal.years);
+      if (!yearsValidation.valid) {
+        throw new ValidationError(`Invalid years for ${renewal.domain}: ${yearsValidation.errors.join(', ')}`);
+      }
+
+      // Get token ID from registry
+      try {
+        const tokenId = await this.registrarContract.registry();
+        const registryContract = new Contract(tokenId, ['function nameToTokenId(string) view returns (uint256)'], this.registrarContract.runner || undefined);
+        const tid = await registryContract.nameToTokenId(normalizedDomain);
+
+        if (tid.toString() === '0') {
+          throw new DomainUnavailableError(normalizedDomain, 'not found');
+        }
+
+        tokenIds.push(tid.toString());
+      } catch (error: any) {
+        throw new NetworkError(`Failed to get token ID for ${normalizedDomain}: ${error.message}`, error);
+      }
+
+      yearCounts.push(renewal.years);
+    }
+
+    try {
+      // Calculate total price
+      let totalPrice = BigInt(0);
+      for (let i = 0; i < normalizedDomains.length; i++) {
+        const price = await this.registrarContract.calculatePrice(normalizedDomains[i]!, yearCounts[i]!);
+        totalPrice += BigInt(price.toString());
+      }
+
+      const contractWithSigner = this.registrarContract.connect(signer) as ISonicRegistrar;
+
+      // Renew all domains
+      const tx = await contractWithSigner.renewBulk(tokenIds, yearCounts, {
+        value: totalPrice
+      });
+
+      // Clear relevant caches
+      for (const domain of normalizedDomains) {
+        this.clearDomainCache(domain);
+      }
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error.message?.includes('Domain not found')) {
+        throw new DomainUnavailableError('One or more domains', 'not found');
+      }
+
+      if (error.message?.includes('Incorrect payment')) {
+        throw new InsufficientPaymentError('Required amount', 'Provided amount');
+      }
+
+      if (error.message?.includes('Too many domains')) {
+        throw new ValidationError('Too many domains in bulk operation');
+      }
+
+      throw new NetworkError(`Failed to renew domains in bulk: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Calculate total price for bulk registration
+   */
+  async calculateBulkPrice(
+    domains: Array<{ name: string; years: number }>
+  ): Promise<{ totalPrice: bigint; totalPriceInEther: string; breakdown: Array<{ name: string; price: bigint; priceInEther: string }> }> {
+    if (!domains || domains.length === 0) {
+      throw new ValidationError('Domains array cannot be empty');
+    }
+
+    const names: string[] = [];
+    const yearCounts: number[] = [];
+
+    // Normalize and validate all domains
+    for (const domain of domains) {
+      const normalizedDomain = normalizeDomainName(domain.name);
+
+      const domainValidation = validateDomainName(normalizedDomain);
+      if (!domainValidation.valid) {
+        throw new ValidationError(`Invalid domain name ${domain.name}: ${domainValidation.errors.join(', ')}`);
+      }
+
+      const yearsValidation = validateYears(domain.years);
+      if (!yearsValidation.valid) {
+        throw new ValidationError(`Invalid years for ${domain.name}: ${yearsValidation.errors.join(', ')}`);
+      }
+
+      names.push(normalizedDomain);
+      yearCounts.push(domain.years);
+    }
+
+    try {
+      const totalPrice = await this.registrarContract.calculateBulkPrice(names, yearCounts);
+
+      // Calculate breakdown for each domain
+      const breakdown = await Promise.all(
+        names.map(async (name, index) => {
+          const price = await this.registrarContract.calculatePrice(name, yearCounts[index]!);
+          return {
+            name,
+            price: BigInt(price.toString()),
+            priceInEther: weiToEther(BigInt(price.toString()))
+          };
+        })
+      );
+
+      return {
+        totalPrice: BigInt(totalPrice.toString()),
+        totalPriceInEther: weiToEther(BigInt(totalPrice.toString())),
+        breakdown
+      };
+    } catch (error: any) {
+      throw new NetworkError(`Failed to calculate bulk price: ${error.message}`, error);
     }
   }
 

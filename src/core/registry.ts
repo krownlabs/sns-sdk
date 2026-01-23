@@ -12,7 +12,7 @@ import {
   PermissionError,
   NetworkError 
 } from '../errors';
-import SonicRegistryABI from '../contracts/abis/SonicRegistry.json';
+import SonicRegistryABI from '../contracts/abis/SonicRegistryV2.json';
 
 export class SonicRegistry {
   private registryContract: ISonicRegistry;
@@ -342,6 +342,91 @@ export class SonicRegistry {
         throw error;
       }
       throw new NetworkError(`Failed to get domain info for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get custom image URI for a domain
+   */
+  async getCustomImage(domain: string): Promise<string> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      return await retryWithBackoff(async () => {
+        const tokenId = await this.registryContract.nameToTokenId(normalizedDomain);
+
+        if (tokenId.toString() === '0') {
+          throw new DomainNotFoundError(normalizedDomain);
+        }
+
+        const customImage = await this.registryContract.customImages(tokenId);
+        return customImage || '';
+      });
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to get custom image for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Set custom image URI for a domain
+   */
+  async setCustomImage(domain: string, imageURI: string, signer: Signer): Promise<string> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      const tokenId = await this.getTokenId(normalizedDomain);
+      const owner = await this.getOwner(normalizedDomain);
+      const signerAddress = await signer.getAddress();
+
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new PermissionError(`Only domain owner can set custom image. Owner: ${owner}, Signer: ${signerAddress}`);
+      }
+
+      const contractWithSigner = this.registryContract.connect(signer) as ISonicRegistry;
+      const tx = await contractWithSigner.setCustomImage(tokenId, imageURI);
+
+      // Clear cache for this domain
+      this.clearDomainCache(normalizedDomain);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError || error instanceof PermissionError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to set custom image for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Clear custom image for a domain (revert to default)
+   */
+  async clearCustomImage(domain: string, signer: Signer): Promise<string> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      const tokenId = await this.getTokenId(normalizedDomain);
+      const owner = await this.getOwner(normalizedDomain);
+      const signerAddress = await signer.getAddress();
+
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new PermissionError(`Only domain owner can clear custom image. Owner: ${owner}, Signer: ${signerAddress}`);
+      }
+
+      const contractWithSigner = this.registryContract.connect(signer) as ISonicRegistry;
+      const tx = await contractWithSigner.clearCustomImage(tokenId);
+
+      // Clear cache for this domain
+      this.clearDomainCache(normalizedDomain);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError || error instanceof PermissionError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to clear custom image for ${normalizedDomain}: ${error.message}`, error);
     }
   }
 

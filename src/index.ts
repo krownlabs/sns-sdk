@@ -11,7 +11,7 @@ export { SonicRegistrar } from './core/registrar';
 // Types
 export type {
   ISonicRegistry,
-  ISonicResolver, 
+  ISonicResolver,
   ISonicRegistrar,
   SNSConfig,
   DomainRecord,
@@ -31,7 +31,11 @@ export type {
   DomainEvent,
   DomainName,
   TokenId,
-  EthereumAddress
+  EthereumAddress,
+  // V2 additions
+  BulkRegistrationOptions,
+  BulkRegistrationResult,
+  SocialRecords
 } from './types';
 
 // Contract addresses and network configs

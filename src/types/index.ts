@@ -21,6 +21,8 @@ export interface DomainRecord {
   resolver: string;
   address?: string | undefined;
   content?: string | undefined;
+  contenthash?: string | undefined; // V2: ENS-compatible contenthash
+  customImage?: string | undefined; // V2: Custom NFT image URI
   texts?: Record<string, string> | undefined;
   expiryTime: number;
   expired: boolean;
@@ -63,8 +65,38 @@ export interface RegistrationOptions {
   records?: {
     address?: string;
     content?: string;
+    contenthash?: string; // V2: ENS-compatible contenthash
     texts?: Record<string, string>;
   };
+  customImage?: string; // V2: Custom NFT image URI
+}
+
+// V2: Bulk registration options
+export interface BulkRegistrationOptions {
+  domains: Array<{
+    name: string;
+    years: number;
+  }>;
+}
+
+// V2: Bulk registration result
+export interface BulkRegistrationResult {
+  transactionHash: string;
+  totalPrice: bigint;
+  domains: Array<{
+    name: string;
+    tokenId?: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+// V2: Social media records (convenience type)
+export interface SocialRecords {
+  twitter?: string;
+  github?: string;
+  discord?: string;
+  telegram?: string;
 }
 
 export interface BatchResolutionResult {
@@ -130,7 +162,7 @@ export interface EventFilter {
 }
 
 export interface DomainEvent {
-  type: 'DomainRegistered' | 'DomainRenewed' | 'Transfer' | 'AddressSet' | 'ContentSet' | 'TextSet';
+  type: 'DomainRegistered' | 'DomainRenewed' | 'DomainReclaimed' | 'Transfer' | 'AddressSet' | 'ContentSet' | 'TextSet' | 'CustomImageSet' | 'PrimaryNameSet' | 'BulkRegistration' | 'BulkRenewal';
   domain: string;
   tokenId: string;
   owner: string;

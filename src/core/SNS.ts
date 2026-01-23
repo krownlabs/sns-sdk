@@ -455,6 +455,244 @@ export class SNS {
   }
 
   // =============================================================================
+  // V2: BULK OPERATIONS
+  // =============================================================================
+
+  /**
+   * V2: Register multiple domains at once
+   */
+  async registerBulk(
+    domains: Array<{ name: string; years: number }>,
+    signer: Signer
+  ): Promise<string> {
+    // Validation is done in registrar.registerBulk
+    return await this.registrar.registerBulk(domains, signer);
+  }
+
+  /**
+   * V2: Renew multiple domains at once
+   */
+  async renewBulk(
+    renewals: Array<{ domain: string; years: number }>,
+    signer: Signer
+  ): Promise<string> {
+    // Validation is done in registrar.renewBulk
+    return await this.registrar.renewBulk(renewals, signer);
+  }
+
+  /**
+   * V2: Calculate total price for bulk registration
+   */
+  async calculateBulkPrice(
+    domains: Array<{ name: string; years: number }>
+  ): Promise<{ totalPrice: bigint; totalPriceInEther: string; breakdown: Array<{ name: string; price: bigint; priceInEther: string }> }> {
+    return await this.registrar.calculateBulkPrice(domains);
+  }
+
+  // =============================================================================
+  // V2: CONTENTHASH & ENHANCED TEXT RECORDS
+  // =============================================================================
+
+  /**
+   * V2: Get contenthash (IPFS/Swarm) for a domain
+   */
+  async getContenthash(domain: string): Promise<string> {
+    const validation = validateDomainName(domain);
+    if (!validation.valid) {
+      throw new ValidationError(`Invalid domain name: ${validation.errors.join(', ')}`);
+    }
+
+    return await this.resolver.getContenthash(domain);
+  }
+
+  /**
+   * V2: Set contenthash for a domain
+   */
+  async setContenthash(domain: string, hash: string, signer: Signer): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    try {
+      const tokenId = await this.registry.getTokenId(domain);
+      const owner = await this.registry.getOwner(domain);
+      const signerAddress = await signer.getAddress();
+
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new PermissionError(`Only domain owner can set contenthash. Owner: ${owner}, Signer: ${signerAddress}`);
+      }
+
+      const contractWithSigner = this.resolverContract.connect(signer) as ISonicResolver;
+      const tx = await contractWithSigner.setContenthash(tokenId, hash);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error instanceof ValidationError || error instanceof PermissionError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to set contenthash for ${domain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get multiple text records at once
+   */
+  async getTexts(domain: string, keys: string[]): Promise<Record<string, string>> {
+    const validation = validateDomainName(domain);
+    if (!validation.valid) {
+      throw new ValidationError(`Invalid domain name: ${validation.errors.join(', ')}`);
+    }
+
+    return await this.resolver.getTexts(domain, keys);
+  }
+
+  /**
+   * V2: Set multiple text records at once
+   */
+  async setTextBatch(domain: string, records: Record<string, string>, signer: Signer): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    try {
+      const tokenId = await this.registry.getTokenId(domain);
+      const owner = await this.registry.getOwner(domain);
+      const signerAddress = await signer.getAddress();
+
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new PermissionError(`Only domain owner can set text records. Owner: ${owner}, Signer: ${signerAddress}`);
+      }
+
+      const keys = Object.keys(records);
+      const values = Object.values(records);
+
+      const contractWithSigner = this.resolverContract.connect(signer) as ISonicResolver;
+      const tx = await contractWithSigner.setTextBatch(tokenId, keys, values);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error instanceof ValidationError || error instanceof PermissionError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to set text records for ${domain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get social media records for a domain
+   */
+  async getSocials(domain: string): Promise<{ twitter: string; github: string; discord: string; telegram: string }> {
+    const validation = validateDomainName(domain);
+    if (!validation.valid) {
+      throw new ValidationError(`Invalid domain name: ${validation.errors.join(', ')}`);
+    }
+
+    return await this.resolver.getSocials(domain);
+  }
+
+  // =============================================================================
+  // V2: PRIMARY NAME (REPLACES REVERSE RECORDS)
+  // =============================================================================
+
+  /**
+   * V2: Set domain as primary name for an address
+   */
+  async setPrimaryName(domain: string, signer: Signer): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    try {
+      const tokenId = await this.registry.getTokenId(domain);
+      const owner = await this.registry.getOwner(domain);
+      const signerAddress = await signer.getAddress();
+
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new PermissionError(`Only domain owner can set as primary name. Owner: ${owner}, Signer: ${signerAddress}`);
+      }
+
+      const contractWithSigner = this.resolverContract.connect(signer) as ISonicResolver;
+      const tx = await contractWithSigner.setPrimaryName(tokenId);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error instanceof ValidationError || error instanceof PermissionError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to set primary name for ${domain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Clear primary name for the signer's address
+   */
+  async clearPrimaryName(signer: Signer): Promise<string> {
+    try {
+      const contractWithSigner = this.resolverContract.connect(signer) as ISonicResolver;
+      const tx = await contractWithSigner.clearPrimaryName();
+
+      return tx.hash;
+    } catch (error: any) {
+      throw new NetworkError(`Failed to clear primary name: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get primary name for an address
+   */
+  async getPrimaryName(address: string): Promise<string> {
+    const validation = validateAddress(address);
+    if (!validation.valid) {
+      throw new ValidationError(`Invalid address: ${validation.errors.join(', ')}`);
+    }
+
+    return await this.resolver.getPrimaryName(address);
+  }
+
+  // =============================================================================
+  // V2: CUSTOM NFT IMAGES
+  // =============================================================================
+
+  /**
+   * V2: Get custom image URI for a domain
+   */
+  async getCustomImage(domain: string): Promise<string> {
+    const validation = validateDomainName(domain);
+    if (!validation.valid) {
+      throw new ValidationError(`Invalid domain name: ${validation.errors.join(', ')}`);
+    }
+
+    return await this.registry.getCustomImage(domain);
+  }
+
+  /**
+   * V2: Set custom image URI for a domain
+   */
+  async setCustomImage(domain: string, imageURI: string, signer: Signer): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    return await this.registry.setCustomImage(domain, imageURI, signer);
+  }
+
+  /**
+   * V2: Clear custom image for a domain (revert to default)
+   */
+  async clearCustomImage(domain: string, signer: Signer): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    return await this.registry.clearCustomImage(domain, signer);
+  }
+
+  // =============================================================================
   // UTILITY METHODS
   // =============================================================================
 

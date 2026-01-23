@@ -1,7 +1,7 @@
 {
   "name": "sns-sdk",
-  "version": "1.1.0",
-  "description": "JavaScript/TypeScript SDK for Sonic Name Service (SNS) - Easy integration for dApps",
+  "version": "2.0.0",
+  "description": "JavaScript/TypeScript SDK for Sonic Name Service (SNS) V2 - Easy integration for dApps with bulk operations, contenthash, and enhanced features",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.esm.js",
@@ -45,7 +45,7 @@
   ],
   "author": "Sonic Name Service",
   "license": "MIT",
-  "homepage": "https://www.sonicname.services",
+  "homepage": "https://sns.krownlabs.app",
   "repository": {
     "type": "git",
     "url": "https://github.com/krownlabs/sns-sdk.git"

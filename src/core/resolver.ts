@@ -14,8 +14,8 @@ import {
   ResolverError,
   NetworkError 
 } from '../errors';
-import SonicRegistryABI from '../contracts/abis/SonicRegistry.json';
-import SonicResolverABI from '../contracts/abis/SonicResolver.json';
+import SonicRegistryABI from '../contracts/abis/SonicRegistryV2.json';
+import SonicResolverABI from '../contracts/abis/SonicResolverV2.json';
 
 export class SonicResolver {
   private registryContract: ISonicRegistry;
@@ -335,6 +335,143 @@ export class SonicResolver {
         return { address: addresses[index]!, error: result.reason?.message || 'Unknown error' };
       }
     });
+  }
+
+  /**
+   * V2: Get contenthash (IPFS/Swarm) for a domain
+   */
+  async getContenthash(domain: string): Promise<string> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      return await retryWithBackoff(async () => {
+        const tokenId = await this.registryContract.nameToTokenId(normalizedDomain);
+
+        if (tokenId.toString() === '0') {
+          throw new DomainNotFoundError(normalizedDomain);
+        }
+
+        const expired = await this.registryContract.isExpired(tokenId);
+        if (expired) {
+          const expiryTime = await this.registryContract.getExpiryTime(tokenId);
+          throw new DomainExpiredError(normalizedDomain, Number(expiryTime));
+        }
+
+        const contenthash = await this.resolverContract.contenthash(tokenId);
+        return contenthash || '';
+      });
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError || error instanceof DomainExpiredError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to get contenthash for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get multiple text records at once
+   */
+  async getTexts(domain: string, keys: string[]): Promise<Record<string, string>> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      return await retryWithBackoff(async () => {
+        const tokenId = await this.registryContract.nameToTokenId(normalizedDomain);
+
+        if (tokenId.toString() === '0') {
+          throw new DomainNotFoundError(normalizedDomain);
+        }
+
+        const expired = await this.registryContract.isExpired(tokenId);
+        if (expired) {
+          const expiryTime = await this.registryContract.getExpiryTime(tokenId);
+          throw new DomainExpiredError(normalizedDomain, Number(expiryTime));
+        }
+
+        const values = await this.resolverContract.getTexts(tokenId, keys);
+
+        const result: Record<string, string> = {};
+        keys.forEach((key, index) => {
+          result[key] = values[index] || '';
+        });
+
+        return result;
+      });
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError || error instanceof DomainExpiredError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to get texts for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get social media records for a domain
+   */
+  async getSocials(domain: string): Promise<{ twitter: string; github: string; discord: string; telegram: string }> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    try {
+      return await retryWithBackoff(async () => {
+        const tokenId = await this.registryContract.nameToTokenId(normalizedDomain);
+
+        if (tokenId.toString() === '0') {
+          throw new DomainNotFoundError(normalizedDomain);
+        }
+
+        const expired = await this.registryContract.isExpired(tokenId);
+        if (expired) {
+          const expiryTime = await this.registryContract.getExpiryTime(tokenId);
+          throw new DomainExpiredError(normalizedDomain, Number(expiryTime));
+        }
+
+        const [twitter, github, discord, telegram] = await this.resolverContract.getSocials(tokenId);
+
+        return {
+          twitter: twitter || '',
+          github: github || '',
+          discord: discord || '',
+          telegram: telegram || ''
+        };
+      });
+    } catch (error: any) {
+      if (error instanceof DomainNotFoundError || error instanceof DomainExpiredError) {
+        throw error;
+      }
+      throw new NetworkError(`Failed to get socials for ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get primary name for an address
+   */
+  async getPrimaryName(address: string): Promise<string> {
+    const normalizedAddress = address.toLowerCase();
+
+    try {
+      return await retryWithBackoff(async () => {
+        const primaryName = await this.resolverContract.getPrimaryName(normalizedAddress);
+        return primaryName || '';
+      });
+    } catch (error: any) {
+      throw new NetworkError(`Failed to get primary name for ${normalizedAddress}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Get primary name token ID for an address
+   */
+  async getPrimaryNameTokenId(address: string): Promise<string> {
+    const normalizedAddress = address.toLowerCase();
+
+    try {
+      return await retryWithBackoff(async () => {
+        const tokenId = await this.resolverContract.getPrimaryNameTokenId(normalizedAddress);
+        return tokenId.toString();
+      });
+    } catch (error: any) {
+      throw new NetworkError(`Failed to get primary name token ID for ${normalizedAddress}: ${error.message}`, error);
+    }
   }
 
   /**
