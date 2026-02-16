@@ -30,7 +30,7 @@ import {
   PermissionError
 } from '../errors';
 import { chunkArray } from '../utils/helpers';
-import SonicResolverABI from '../contracts/abis/SonicResolver.json';
+import SonicResolverABI from '../contracts/abis/SonicResolverV2.json';
 
 export class SNS {
   private provider: Provider;
