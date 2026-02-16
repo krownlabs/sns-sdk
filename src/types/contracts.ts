@@ -62,6 +62,8 @@ export interface SonicRegistrarMethods {
   registerBulk(names: string[], yearCounts: number[], overrides?: { value: bigint }): Promise<ContractTransactionResponse>;
   renewBulk(tokenIds: (bigint | string)[], yearCounts: number[], overrides?: { value: bigint }): Promise<ContractTransactionResponse>;
   calculateBulkPrice(names: string[], yearCounts: number[]): Promise<bigint>;
+  // V2 additions - register and configure
+  registerAndConfigure(name: string, yearCount: number, resolverAddress: string, setPrimary: boolean, overrides?: { value: bigint }): Promise<ContractTransactionResponse>;
   THREECHAR(): Promise<bigint>;
   FOURCHAR(): Promise<bigint>;
   FIVECHAR(): Promise<bigint>;

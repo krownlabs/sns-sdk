@@ -292,6 +292,40 @@ export class SNS {
   }
 
   /**
+   * V2: Register domain and fully configure it in a single transaction
+   * Combines: register + setResolver + setAddress + setPrimaryName
+   * @param domain Domain name to register
+   * @param years Number of years to register
+   * @param resolverAddress Address to set for the domain
+   * @param setPrimary Whether to set this as your primary name
+   * @param signer Wallet signer
+   */
+  async registerAndConfigure(
+    domain: string,
+    years: number,
+    resolverAddress: string,
+    setPrimary: boolean,
+    signer: Signer
+  ): Promise<string> {
+    const domainValidation = validateDomainName(domain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    const yearsValidation = validateYears(years);
+    if (!yearsValidation.valid) {
+      throw new ValidationError(`Invalid years: ${yearsValidation.errors.join(', ')}`);
+    }
+
+    const addressValidation = validateAddress(resolverAddress);
+    if (!addressValidation.valid) {
+      throw new ValidationError(`Invalid resolver address: ${addressValidation.errors.join(', ')}`);
+    }
+
+    return await this.registrar.registerAndConfigure(domain, years, resolverAddress, setPrimary, signer);
+  }
+
+  /**
    * Renew a domain
    */
   async renew(domain: string, years: number, signer: Signer): Promise<string> {

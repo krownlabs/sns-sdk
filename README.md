@@ -314,6 +314,35 @@ const txHash = await sns.register('newdomain.s', 1, wallet);
 console.log(`Registration transaction: ${txHash}`);
 ```
 
+#### `registerAndConfigure(domain: string, years: number, resolverAddress: string, setPrimary: boolean, signer: Signer): Promise<string>` 🆕
+Register a domain and fully configure it in a single transaction. This is a gas-efficient convenience function that combines multiple operations:
+- Register the domain
+- Set the default resolver
+- Set the resolver address
+- Optionally set as primary name
+
+```typescript
+import { Wallet } from 'ethers';
+
+const wallet = new Wallet('your-private-key', provider);
+
+// Register and configure in one transaction
+const txHash = await sns.registerAndConfigure(
+  'mydomain.s',          // domain name
+  1,                     // years
+  wallet.address,        // address to resolve to
+  true,                  // set as primary name
+  wallet
+);
+
+console.log(`Domain registered and configured: ${txHash}`);
+// After this transaction:
+// - Domain is registered for 1 year
+// - Resolver is set
+// - Domain resolves to wallet.address
+// - Domain is set as primary name for wallet.address
+```
+
 #### `renew(domain: string, years: number, signer: Signer): Promise<string>`
 Renew an existing domain.
 
@@ -593,6 +622,11 @@ await sns.setCustomImage('mydomain.s', 'ipfs://QmX...', wallet);
 ```
 
 ## Changelog
+
+### v2.0.1 (2026-02)
+- 🆕 Added `registerAndConfigure()` - Register and configure domain in one transaction
+- ⚡ Gas optimization for domain setup
+- 📝 Documentation improvements
 
 ### v2.0.0 (2026-01)
 - 🎉 **MAJOR UPDATE**: Full V2 contract support

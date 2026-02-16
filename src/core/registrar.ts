@@ -6,12 +6,13 @@ import {
 import { ISonicRegistrar } from '../types/contracts';
 import { Cache, generatePricingCacheKey } from '../utils/cache';
 import { retryWithBackoff, calculatePrice, weiToEther } from '../utils/helpers';
-import { normalizeDomainName, validateDomainName, validateYears } from '../utils/validation';
-import { 
+import { normalizeDomainName, validateDomainName, validateYears, validateAddress } from '../utils/validation';
+import {
   ValidationError,
   DomainUnavailableError,
   InsufficientPaymentError,
-  NetworkError 
+  NetworkError,
+  ContractError
 } from '../errors';
 import SonicRegistrarABI from '../contracts/abis/SonicRegistrarV2.json';
 
@@ -134,6 +135,79 @@ export class SonicRegistrar {
       }
 
       throw new NetworkError(`Failed to register ${normalizedDomain}: ${error.message}`, error);
+    }
+  }
+
+  /**
+   * V2: Register domain and fully configure it in a single transaction
+   * Combines: register + setResolver + setAddress + setPrimaryName
+   */
+  async registerAndConfigure(
+    domain: string,
+    years: number,
+    resolverAddress: string,
+    setPrimary: boolean,
+    signer: Signer
+  ): Promise<string> {
+    const normalizedDomain = normalizeDomainName(domain);
+
+    // Validate inputs
+    const domainValidation = validateDomainName(normalizedDomain);
+    if (!domainValidation.valid) {
+      throw new ValidationError(`Invalid domain name: ${domainValidation.errors.join(', ')}`);
+    }
+
+    const yearsValidation = validateYears(years);
+    if (!yearsValidation.valid) {
+      throw new ValidationError(`Invalid years: ${yearsValidation.errors.join(', ')}`);
+    }
+
+    const addressValidation = validateAddress(resolverAddress);
+    if (!addressValidation.valid) {
+      throw new ValidationError(`Invalid resolver address: ${addressValidation.errors.join(', ')}`);
+    }
+
+    try {
+      // Calculate price
+      const priceResult = await this.getPrice(normalizedDomain, years);
+
+      const contractWithSigner = this.registrarContract.connect(signer) as ISonicRegistrar;
+
+      // Register and configure in one transaction
+      const tx = await contractWithSigner.registerAndConfigure(
+        normalizedDomain,
+        years,
+        resolverAddress,
+        setPrimary,
+        { value: priceResult.price }
+      );
+
+      // Clear relevant caches
+      this.clearDomainCache(normalizedDomain);
+
+      return tx.hash;
+    } catch (error: any) {
+      if (error.message?.includes('Name taken')) {
+        throw new DomainUnavailableError(normalizedDomain, 'already registered');
+      }
+
+      if (error.message?.includes('Incorrect payment')) {
+        throw new InsufficientPaymentError('Required amount', 'Provided amount');
+      }
+
+      if (error.message?.includes('Invalid name')) {
+        throw new ValidationError(`Invalid domain name: ${normalizedDomain}`);
+      }
+
+      if (error.message?.includes('Default resolver not set')) {
+        throw new ContractError('Default resolver not configured in registrar contract');
+      }
+
+      if (error instanceof ValidationError || error instanceof DomainUnavailableError) {
+        throw error;
+      }
+
+      throw new NetworkError(`Failed to register and configure ${normalizedDomain}: ${error.message}`, error);
     }
   }
 
